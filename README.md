@@ -196,6 +196,16 @@ This repository will follow the license specified in the root `LICENSE` file. If
 If you use the MOSS-TTS work in your research or product, please cite:
 
 ```bibtex
+@misc{openmoss2026mossttsnano,
+  title={MOSS-TTS-Nano},
+  author={OpenMOSS Team},
+  year={2026},
+  howpublished={GitHub repository},
+  url={https://github.com/OpenMOSS/MOSS-TTS-Nano}
+}
+```
+
+```bibtex
 @misc{gong2026mossttstechnicalreport,
   title={MOSS-TTS Technical Report},
   author={Yitian Gong and Botian Jiang and Yiwei Zhao and Yucheng Yuan and Kuangwei Chen and Yaozhou Jiang and Cheng Chang and Dong Hong and Mingshu Chen and Ruixiao Li and Yiyang Zhang and Yang Gao and Hanfu Chen and Ke Chen and Songlin Wang and Xiaogui Yang and Yuqian Zhang and Kexin Huang and ZhengYuan Lin and Kang Yu and Ziqi Chen and Jin Wang and Zhaoye Fei and Qinyuan Cheng and Shimin Li and Xipeng Qiu},
@@ -204,16 +214,6 @@ If you use the MOSS-TTS work in your research or product, please cite:
   archivePrefix={arXiv},
   primaryClass={cs.SD},
   url={https://arxiv.org/abs/2603.18090}
-}
-```
-
-```bibtex
-@misc{openmoss2026mossttsnano,
-  title={MOSS-TTS-Nano},
-  author={OpenMOSS Team},
-  year={2026},
-  howpublished={GitHub repository},
-  url={https://github.com/OpenMOSS/MOSS-TTS-Nano}
 }
 ```
 
