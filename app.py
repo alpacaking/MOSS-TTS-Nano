@@ -21,7 +21,7 @@ import numpy as np
 import torch
 import uvicorn
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
 from moss_tts_nano_runtime import (
     DEFAULT_AUDIO_TOKENIZER_PATH,
@@ -575,6 +575,20 @@ def _audio_to_pcm16le_bytes(audio_array) -> bytes:
     return audio_int16.tobytes()
 
 
+def _read_audio_file_base64(path_value: str | None) -> str:
+    path_text = str(path_value or "").strip()
+    if not path_text:
+        return ""
+    path = Path(path_text)
+    if not path.is_file():
+        return ""
+    try:
+        return base64.b64encode(path.read_bytes()).decode("ascii")
+    except Exception:
+        logging.warning("failed to read audio file for base64 response: %s", path, exc_info=True)
+        return ""
+
+
 def _maybe_delete_file(path_value: str | None) -> None:
     if not path_value:
         return
@@ -662,139 +676,297 @@ def _render_index_html(
   <style>
     :root {
       color-scheme: light;
-      --bg: #f6f7f9;
+      --bg: #eef1f7;
+      --bg-soft: #f7f8fc;
       --panel: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --line: #d1d5db;
-      --accent: #0f766e;
-      --accent-strong: #115e59;
-      --accent-soft: rgba(15, 118, 110, 0.12);
-      --accent-tint: #eef8f6;
-      --danger: #b91c1c;
+      --text: #1f2534;
+      --muted: #647089;
+      --line: #dbe2f0;
+      --line-strong: #cfd8ea;
+      --chip: #dfe5ff;
+      --chip-text: #4f63d8;
+      --accent: #6a6ef6;
+      --accent-strong: #565cea;
+      --accent-soft: rgba(106, 110, 246, 0.12);
+      --danger: #ba1f46;
+      --shadow: 0 14px 32px rgba(34, 47, 78, 0.06);
+    }
+    * {
+      box-sizing: border-box;
     }
     body {
       margin: 0;
-      background: linear-gradient(180deg, #eef6f4 0%, var(--bg) 40%);
+      min-height: 100vh;
+      background:
+        radial-gradient(1100px 380px at 12% -10%, #ffffff 0%, transparent 70%),
+        linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 54%);
       color: var(--text);
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Plus Jakarta Sans", "Noto Sans SC", "Segoe UI", sans-serif;
     }
     .page {
-      max-width: 1120px;
+      max-width: 1460px;
       margin: 0 auto;
-      padding: 24px;
+      padding: 24px 26px 30px;
     }
     .hero {
-      margin-bottom: 20px;
+      margin-bottom: 12px;
     }
     .hero h1 {
-      margin: 0 0 8px;
-      font-size: 32px;
+      margin: 0 0 10px;
+      font-size: 38px;
+      letter-spacing: -0.03em;
     }
-    .hero p {
-      margin: 0;
+    .hero .lead {
+      margin: 0 0 8px;
       color: var(--muted);
+      font-size: 19px;
+      line-height: 1.55;
+      max-width: 980px;
+    }
+    .hero-points {
+      margin: 0 0 8px 20px;
+      padding: 0;
+      color: #33415f;
+      line-height: 1.6;
+    }
+    .hero-points strong {
+      color: #121826;
+    }
+    .build-note {
+      margin: 0;
+      color: #4f5d7c;
+    }
+    .top-tabs {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      margin-top: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .top-tab {
+      border: 0;
+      background: transparent;
+      color: #4e5f89;
+      font-size: 15px;
+      font-weight: 500;
+      padding: 10px 0;
+      position: relative;
+      cursor: default;
+    }
+    .top-tab.active {
+      color: var(--accent-strong);
+      font-weight: 700;
+    }
+    .top-tab.active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 2px;
+      background: var(--accent-strong);
+    }
+    .top-tab:disabled {
+      opacity: 1;
     }
     .grid {
       display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-      gap: 20px;
+      grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+      gap: 14px;
+      margin-top: 14px;
     }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 18px;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: var(--shadow);
     }
     .field {
-      margin-bottom: 14px;
+      margin-bottom: 11px;
     }
-    .field label {
-      display: block;
+    .field > label[for],
+    .field > .field-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 7px;
       font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 6px;
+      line-height: 1;
+      font-weight: 700;
+      color: var(--chip-text);
+      background: var(--chip);
+      border-radius: 6px;
+      padding: 5px 8px;
+    }
+    .field > label[for]::before,
+    .field > .field-tag::before {
+      content: "♫";
+      font-size: 11px;
+      opacity: 0.75;
+    }
+    .field > label:not([for]):not(.field-tag) {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 2px;
+      color: #273554;
+      font-size: 14px;
+      font-weight: 500;
     }
     .field input,
     .field textarea,
     .field select {
       width: 100%;
-      box-sizing: border-box;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 10px 12px;
       font-size: 14px;
+      color: var(--text);
       background: #fff;
+      transition: border-color 140ms ease, box-shadow 140ms ease;
+    }
+    .field input:focus,
+    .field textarea:focus,
+    .field select:focus {
+      outline: 0;
+      border-color: #aeb9f7;
+      box-shadow: 0 0 0 3px rgba(106, 110, 246, 0.15);
     }
     .field textarea {
-      min-height: 140px;
+      min-height: 108px;
       resize: vertical;
+    }
+    #normalized-text-output {
+      min-height: 114px;
+      background: #fbfcff;
+    }
+    input[type="file"] {
+      border-style: dashed;
+      border-color: var(--line-strong);
+      padding: 54px 12px;
+      background: linear-gradient(180deg, #ffffff 0%, #f5f8ff 100%);
+      color: #4d5d83;
+    }
+    input[type="file"]::file-selector-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 12px;
+      margin-right: 10px;
+      background: #edf1ff;
+      color: var(--chip-text);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .prompt-audio-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #ffffff 0%, #f7f9ff 100%);
+      padding: 10px;
+    }
+    #prompt-audio-preview {
+      margin-top: 0;
+    }
+    #prompt-audio-upload[hidden],
+    #prompt-audio-preview[hidden] {
+      display: none;
+    }
+    .prompt-audio-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .prompt-audio-actions button {
+      min-height: 34px;
+      font-size: 13px;
+      padding: 8px 12px;
     }
     .row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      gap: 10px;
     }
     details {
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 10px;
       padding: 10px 12px;
-      margin: 16px 0;
-      background: #fafafa;
+      margin: 12px 0;
+      background: #f9fafe;
     }
     summary {
       cursor: pointer;
       font-weight: 600;
+      color: #2f3f65;
     }
     .buttons {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-top: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      margin-top: 12px;
     }
-    button {
+    button:not(.top-tab) {
       border: 0;
-      border-radius: 10px;
-      padding: 10px 16px;
+      border-radius: 8px;
+      padding: 10px 14px;
       font-size: 14px;
       font-weight: 700;
       cursor: pointer;
-      background: var(--accent);
+      background: linear-gradient(90deg, #6469f6 0%, #636ef8 50%, #5f61f0 100%);
       color: #fff;
+      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+    }
+    button:not(.top-tab):hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 16px rgba(97, 101, 242, 0.24);
+    }
+    #generate-btn {
+      width: 100%;
+      min-height: 42px;
     }
     button.secondary {
-      background: #334155;
+      background: #edf1fb;
+      color: #44527a;
+      border: 1px solid var(--line-strong);
     }
-    button:disabled {
+    button:not(.top-tab):disabled {
       opacity: 0.6;
       cursor: wait;
+      transform: none;
+      box-shadow: none;
     }
     .status {
       white-space: pre-wrap;
       line-height: 1.5;
       font-size: 14px;
       color: var(--muted);
-      min-height: 48px;
+      min-height: 52px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fcfdff;
+      padding: 10px 12px;
     }
     .status.error {
       color: var(--danger);
+      border-color: rgba(186, 31, 70, 0.28);
+      background: rgba(186, 31, 70, 0.06);
     }
     .meta {
       font-size: 13px;
       color: var(--muted);
-      margin-top: 8px;
+      margin-top: 7px;
+      line-height: 1.5;
     }
     .playback-script {
-      min-height: 104px;
+      min-height: 108px;
       display: flex;
       flex-wrap: wrap;
       align-content: flex-start;
       gap: 10px;
-      padding: 14px;
-      border: 1px solid #d8e3e0;
-      border-radius: 14px;
-      background: linear-gradient(180deg, #fbfefd 0%, var(--accent-tint) 100%);
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #ffffff 0%, #f6f8fe 100%);
       overflow: auto;
     }
     .playback-script.empty {
@@ -804,66 +976,113 @@ def _render_index_html(
     .playback-segment {
       display: inline-flex;
       align-items: center;
-      padding: 10px 12px;
-      border-radius: 12px;
-      border: 1px solid #d7e2df;
+      padding: 8px 11px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
       background: #ffffff;
-      color: #475569;
+      color: #4a5c82;
       line-height: 1.6;
       transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
     }
     .playback-segment.played {
-      border-color: rgba(15, 118, 110, 0.18);
+      border-color: rgba(106, 110, 246, 0.24);
       background: var(--accent-soft);
-      color: var(--accent-strong);
+      color: #424db6;
     }
     .playback-segment.active {
       border-color: var(--accent-strong);
       background: var(--accent);
       color: #ffffff;
-      box-shadow: 0 10px 24px rgba(15, 118, 110, 0.22);
+      box-shadow: 0 8px 18px rgba(106, 110, 246, 0.32);
       transform: translateY(-1px);
     }
     audio {
       width: 100%;
-      margin-top: 12px;
+      margin-top: 10px;
+      border-radius: 8px;
+      background: #f8f9fe;
+    }
+    code {
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #eef1fb;
+      color: #33426a;
+    }
+    a {
+      color: #4a5be0;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    @media (max-width: 1120px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .buttons {
+        grid-template-columns: 1fr;
+      }
+      .hero h1 {
+        font-size: 32px;
+      }
     }
     @media (max-width: 860px) {
-      .grid, .row {
+      .row {
         grid-template-columns: 1fr;
+      }
+      .page {
+        padding: 16px 14px 20px;
+      }
+      .hero .lead {
+        font-size: 16px;
+      }
+      .hero h1 {
+        font-size: 28px;
+      }
+      .top-tabs {
+        gap: 14px;
       }
     }
   </style>
 </head>
 <body>
-    <div class="page">
+  <div class="page">
     <div class="hero">
       <h1>MOSS-TTS-Nano Demo</h1>
-      <p>Select a built-in voice clone demo from <code>assets/demo.jsonl</code>. The <code>role</code> field is the prompt speech, and the <code>text</code> field is the default synthesis text.</p>
+      <p class="lead">State-of-the-art text-to-speech demo for multilingual voice cloning.</p>
+      <ul class="hero-points">
+        <li><strong>Voice Clone</strong> - Clone any voice from a reference audio.</li>
+        <li><strong>Voice Presets</strong> - Choose built-in demos from <code>assets/demo.jsonl</code>.</li>
+      </ul>
+      <p class="build-note">Built with <a href="https://github.com/OpenMOSS/MOSS-TTS-Nano" target="_blank" rel="noopener noreferrer">MOSS-TTS-Nano</a>.</p>
+      <div class="top-tabs" role="tablist" aria-label="Demo mode">
+        <button class="top-tab active" type="button" aria-selected="true">Voice Clone</button>
+      </div>
     </div>
 
     <div class="grid">
-      <div class="panel">
+      <div class="panel input-panel">
         <div class="field">
           <label for="demo">Demo</label>
           <select id="demo"></select>
         </div>
 
         <div class="field">
-          <label>Prompt Speech</label>
-          <div id="selected-demo-prompt" class="meta"></div>
-        </div>
-
-        <div class="field">
-          <label for="prompt-audio-upload">Upload Prompt Speech (Optional)</label>
-          <input id="prompt-audio-upload" type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.opus,.aac">
-          <div id="prompt-audio-source" class="meta">Using the selected demo prompt speech.</div>
-          <button id="clear-prompt-audio-btn" class="secondary" type="button" style="margin-top: 10px;">Use Demo Prompt</button>
+          <label for="prompt-audio-upload">Prompt Speech</label>
+          <div class="prompt-audio-box">
+            <input id="prompt-audio-upload" type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.opus,.aac">
+            <audio id="prompt-audio-preview" controls hidden></audio>
+            <div id="prompt-audio-source" class="meta">Using the selected demo prompt speech.</div>
+            <div class="prompt-audio-actions">
+              <button id="choose-prompt-audio-btn" class="secondary" type="button" hidden>选择文件</button>
+              <button id="clear-prompt-audio-btn" class="secondary" type="button" hidden>使用 Demo 音频</button>
+            </div>
+          </div>
         </div>
 
         <div class="field">
           <label for="text">Text</label>
-          <textarea id="text"></textarea>
+          <textarea id="text" placeholder="Enter the text you want to synthesize..."></textarea>
         </div>
 
         <details>
@@ -982,30 +1201,30 @@ def _render_index_html(
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel output-panel">
         <div class="field">
-          <label>Warmup Status</label>
+          <label class="field-tag">Warmup Status</label>
           <div id="warmup-status" class="status">__WARMUP_STATUS__</div>
         </div>
         <div class="field">
-          <label>Text Normalization Status</label>
+          <label class="field-tag">Text Normalization Status</label>
           <div id="text-normalization-status" class="status">__TEXT_NORMALIZATION_STATUS__</div>
         </div>
         <div class="field">
-          <label>Run Status</label>
+          <label class="field-tag">Run Status</label>
           <div id="run-status" class="status">Idle.</div>
         </div>
         <div id="stream-metrics" class="meta"></div>
         <div class="field">
-          <label>Normalized Text</label>
+          <label class="field-tag">Normalized Text</label>
           <textarea id="normalized-text-output" readonly style="min-height: 120px;"></textarea>
         </div>
         <div class="field">
-          <label>Playback Script</label>
+          <label class="field-tag">Playback Script</label>
           <div id="playback-script" class="playback-script empty">The current sentence will be highlighted here during playback.</div>
         </div>
         <div class="field">
-          <label>Resolved Prompt Speech</label>
+          <label class="field-tag">Generated Speech</label>
           <div id="resolved-prompt" class="meta"></div>
         </div>
         <audio id="audio-output" controls></audio>
@@ -1023,9 +1242,10 @@ def _render_index_html(
     const DEFAULT_CPU_THREADS = __DEFAULT_CPU_THREADS__;
 
     const demoSelect = document.getElementById("demo");
-    const selectedDemoPrompt = document.getElementById("selected-demo-prompt");
     const promptAudioUploadInput = document.getElementById("prompt-audio-upload");
+    const promptAudioPreview = document.getElementById("prompt-audio-preview");
     const promptAudioSource = document.getElementById("prompt-audio-source");
+    const choosePromptAudioBtn = document.getElementById("choose-prompt-audio-btn");
     const clearPromptAudioBtn = document.getElementById("clear-prompt-audio-btn");
     const warmupStatus = document.getElementById("warmup-status");
     const textNormalizationStatus = document.getElementById("text-normalization-status");
@@ -1055,6 +1275,7 @@ def _render_index_html(
     let bufferedPlaybackBoundaries = [];
     let currentPlaybackChunkIndex = null;
     let currentPlaybackMarkedComplete = false;
+    let currentPromptAudioPreviewUrl = null;
 
     const demosById = new Map();
     for (const demo of DEMOS) {
@@ -1078,35 +1299,90 @@ def _render_index_html(
       return files && files.length > 0 ? files[0] : null;
     }
 
-    function resolveDisplayedPromptSpeech(demo = getSelectedDemo()) {
+    function clearPromptAudioPreviewUrl() {
+      if (!currentPromptAudioPreviewUrl) {
+        return;
+      }
+      URL.revokeObjectURL(currentPromptAudioPreviewUrl);
+      currentPromptAudioPreviewUrl = null;
+    }
+
+    function getDemoPromptAudioUrl(demoId) {
+      return `${APP_BASE}/api/demo-prompt-audio/${encodeURIComponent(demoId)}`;
+    }
+
+    function showPromptAudioFilePicker(message = "选择文件 | 未选择任何文件") {
+      promptAudioPreview.pause();
+      promptAudioPreview.removeAttribute("src");
+      promptAudioPreview.load();
+      promptAudioPreview.hidden = true;
+      promptAudioUploadInput.hidden = false;
+      choosePromptAudioBtn.hidden = true;
+      clearPromptAudioBtn.hidden = true;
+      promptAudioSource.textContent = message;
+    }
+
+    function showPromptAudioPreview({
+      sourceUrl,
+      message,
+      showResetToDemo,
+    }) {
+      promptAudioPreview.src = sourceUrl;
+      promptAudioPreview.hidden = false;
+      promptAudioUploadInput.hidden = true;
+      choosePromptAudioBtn.hidden = false;
+      clearPromptAudioBtn.hidden = !showResetToDemo;
+      promptAudioSource.textContent = message;
+    }
+
+    function updatePromptAudioPanel(demo = getSelectedDemo()) {
       const uploadedPromptAudio = getUploadedPromptAudioFile();
       if (uploadedPromptAudio) {
-        return `Uploaded: ${uploadedPromptAudio.name}`;
+        clearPromptAudioPreviewUrl();
+        currentPromptAudioPreviewUrl = URL.createObjectURL(uploadedPromptAudio);
+        showPromptAudioPreview({
+          sourceUrl: currentPromptAudioPreviewUrl,
+          message: `Using uploaded prompt speech: ${uploadedPromptAudio.name}`,
+          showResetToDemo: true,
+        });
+        return;
       }
-      return demo ? (demo.prompt_speech || "") : "";
+
+      clearPromptAudioPreviewUrl();
+
+      if (demo && demo.id) {
+        showPromptAudioPreview({
+          sourceUrl: getDemoPromptAudioUrl(demo.id),
+          message: demo.prompt_speech
+            ? `Using demo prompt speech: ${demo.prompt_speech}`
+            : "Using demo prompt speech.",
+          showResetToDemo: false,
+        });
+        return;
+      }
+
+      showPromptAudioFilePicker();
     }
 
     function applySelectedDemo(replaceText = true) {
       const demo = getSelectedDemo();
-      if (!demo) {
-        selectedDemoPrompt.textContent = "No demos available.";
+      const uploadedPromptAudio = getUploadedPromptAudioFile();
+
+      if (!demo && !uploadedPromptAudio) {
         resolvedPrompt.textContent = "";
-        promptAudioSource.textContent = "";
-        textInput.value = "";
-        renderPlaybackScript([], "");
+        if (replaceText) {
+          textInput.value = "";
+        }
+        updatePromptAudioPanel(null);
+        renderPlaybackScript([], textInput.value);
         generateBtn.disabled = true;
         return;
       }
-      const displayedPromptSpeech = resolveDisplayedPromptSpeech(demo);
-      const uploadedPromptAudio = getUploadedPromptAudioFile();
-      selectedDemoPrompt.textContent = displayedPromptSpeech;
-      resolvedPrompt.textContent = displayedPromptSpeech;
-      promptAudioSource.textContent = uploadedPromptAudio
-        ? "Using uploaded prompt speech for synthesis."
-        : "Using the selected demo prompt speech.";
-      if (replaceText) {
+
+      if (demo && replaceText) {
         textInput.value = demo.text || "";
       }
+      updatePromptAudioPanel(demo);
       previewPlaybackScriptFromInputs();
       generateBtn.disabled = false;
     }
@@ -1523,7 +1799,7 @@ def _render_index_html(
       rebuildBufferedPlaybackBoundaries();
       updateBufferedPlaybackHighlight();
       updatePauseButtonState();
-      resolvedPrompt.textContent = data.prompt_audio_path || "";
+      resolvedPrompt.textContent = "Generated speech is ready.";
       setStatus(runStatus, data.run_status || "Done.");
       if (data.warmup_status_text) {
         setStatus(warmupStatus, data.warmup_status_text);
@@ -1536,7 +1812,7 @@ def _render_index_html(
     async function generateRealtime(formData) {
       await closeRealtimeStream();
       clearAudioOutput();
-      resolvedPrompt.textContent = "";
+      resolvedPrompt.textContent = "Generating realtime speech...";
       streamMetrics.textContent = "";
 
       const startData = await fetchJson(`${APP_BASE}/api/generate-stream/start`, {
@@ -1586,9 +1862,6 @@ def _render_index_html(
           metrics.push(`first_audio=${Number(snapshot.first_audio_latency_seconds).toFixed(2)}s`);
         }
         streamMetrics.textContent = metrics.join(" | ");
-        if (snapshot.prompt_audio_path) {
-          resolvedPrompt.textContent = snapshot.prompt_audio_path;
-        }
         if (!currentRealtimePlaybackPaused && snapshot.playback_chunk_index !== null && snapshot.playback_chunk_index !== undefined) {
           setPlaybackHighlight(snapshot.playback_chunk_index);
         }
@@ -1651,7 +1924,18 @@ def _render_index_html(
       if (!result || !result.ready) {
         throw new Error("Streaming finished but the final result is not ready yet.");
       }
-      resolvedPrompt.textContent = result.prompt_audio_path || resolvedPrompt.textContent;
+      if (result.audio_base64) {
+        if (currentAudioObjectUrl) {
+          URL.revokeObjectURL(currentAudioObjectUrl);
+          currentAudioObjectUrl = null;
+        }
+        const audioBlob = base64ToBlob(result.audio_base64, "audio/wav");
+        currentAudioObjectUrl = URL.createObjectURL(audioBlob);
+        audioOutput.src = currentAudioObjectUrl;
+        audioOutput.load();
+        rebuildBufferedPlaybackBoundaries();
+      }
+      resolvedPrompt.textContent = "Generated speech is ready.";
       streamMetrics.textContent = result.stream_metrics || streamMetrics.textContent;
       if (Array.isArray(result.text_chunks) && result.text_chunks.length > 0) {
         renderPlaybackScript(result.text_chunks, normalizedTextOutput.value || textInput.value);
@@ -1660,6 +1944,12 @@ def _render_index_html(
         setPlaybackHighlight(playbackChunks.length - 1);
       }
       setStatus(runStatus, result.run_status || "Stream complete.");
+      if (currentStreamId) {
+        fetch(`${APP_BASE}/api/generate-stream/${encodeURIComponent(currentStreamId)}/close`, {
+          method: "POST"
+        }).catch(() => {});
+        currentStreamId = null;
+      }
       monitorRealtimePlaybackCompletion();
       updatePauseButtonState();
     }
@@ -1719,18 +2009,24 @@ def _render_index_html(
       clearAudioOutput();
       applySelectedDemo(true);
       clearNormalizedOutputs();
+      resolvedPrompt.textContent = "";
       streamMetrics.textContent = "";
       setStatus(runStatus, "Idle.");
     });
     promptAudioUploadInput.addEventListener("change", () => {
       applySelectedDemo(false);
       clearNormalizedOutputs();
+      resolvedPrompt.textContent = "";
       setStatus(runStatus, "Idle.");
+    });
+    choosePromptAudioBtn.addEventListener("click", () => {
+      promptAudioUploadInput.click();
     });
     clearPromptAudioBtn.addEventListener("click", () => {
       promptAudioUploadInput.value = "";
       applySelectedDemo(false);
       clearNormalizedOutputs();
+      resolvedPrompt.textContent = "";
       setStatus(runStatus, "Idle.");
     });
     pauseBtn.addEventListener("click", () => {
@@ -1754,6 +2050,9 @@ def _render_index_html(
     audioOutput.addEventListener("ended", () => {
       updatePauseButtonState();
       setPlaybackHighlight(null, { markAllPlayed: true });
+    });
+    window.addEventListener("beforeunload", () => {
+      clearPromptAudioPreviewUrl();
     });
     updatePauseButtonState();
     applySelectedDemo(true);
@@ -2102,6 +2401,20 @@ def _build_app(
             "status_text": _text_normalization_status_text(snapshot),
         }
 
+    @app.get("/api/demo-prompt-audio/{demo_id}")
+    async def demo_prompt_audio(demo_id: str):
+        try:
+            demo_entry = _resolve_demo_entry(demo_id)
+        except ValueError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+
+        media_type = "audio/wav" if demo_entry.prompt_audio_path.suffix.lower() == ".wav" else "application/octet-stream"
+        return FileResponse(
+            path=str(demo_entry.prompt_audio_path),
+            media_type=media_type,
+            filename=demo_entry.prompt_audio_path.name,
+        )
+
     @app.post("/api/generate-stream/start")
     async def generate_stream_start(
         text: str = Form(...),
@@ -2268,6 +2581,17 @@ def _build_app(
             return JSONResponse(status_code=202, content=snapshot)
 
         result = dict(job.final_result)
+        audio_base64_payload = str(result.get("audio_base64") or "")
+        audio_path_for_response = str(result.get("audio_path") or "").strip()
+        if not audio_base64_payload and audio_path_for_response:
+            audio_base64_payload = _read_audio_file_base64(audio_path_for_response)
+            if audio_base64_payload:
+                with job.lock:
+                    if job.final_result is not None:
+                        job.final_result["audio_base64"] = audio_base64_payload
+                        job.final_result["audio_path"] = ""
+                _maybe_delete_file(audio_path_for_response)
+
         return {
             "stream_id": stream_id,
             "ready": True,
@@ -2277,6 +2601,7 @@ def _build_app(
             "stream_metrics": _stream_metrics_text(snapshot),
             "warmup_status_text": _warmup_status_text(warmup_manager.snapshot()),
             "text_chunks": result.get("text_chunks") or snapshot.get("text_chunks") or [],
+            "audio_base64": audio_base64_payload,
         }
 
     @app.post("/api/generate-stream/{stream_id}/close")
@@ -2284,9 +2609,14 @@ def _build_app(
         job = stream_jobs.close(stream_id)
         if job is None:
             return JSONResponse(status_code=404, content={"error": "stream not found"})
+        audio_cleanup_path = ""
+        with job.lock:
+            if job.final_result is not None:
+                audio_cleanup_path = str(job.final_result.get("audio_path") or "").strip()
         snapshot = job.snapshot()
         snapshot["status_text"] = _format_stream_status(snapshot)
         stream_jobs.delete(stream_id)
+        _maybe_delete_file(audio_cleanup_path)
         return snapshot
 
     @app.post("/api/generate")
