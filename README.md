@@ -32,6 +32,7 @@ MOSS-TTS-Nano is an open-source **multilingual tiny speech generation model** fr
 
 ## News
 
+* 2026.4.14: We release [**MOSS-TTS-Nano-Reader**](https://github.com/OpenMOSS/MOSS-TTS-Nano-Reader), a local browser reading application built on top of **MOSS-TTS-Nano**.
 * 2026.4.10: We release **MOSS-TTS-Nano**. A demo Space is available at [OpenMOSS-Team/MOSS-TTS-Nano](https://huggingface.co/spaces/OpenMOSS-Team/MOSS-TTS-Nano). You can also view the demo and more details at [openmoss.github.io/MOSS-TTS-Nano-Demo/](https://openmoss.github.io/MOSS-TTS-Nano-Demo/).
 
 ## Demo
@@ -118,12 +119,17 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-If `WeTextProcessing` fails to install from `requirements.txt`, try installing it manually in the same environment:
+If `WeTextProcessing` or `pynini` fails to install from `requirements.txt`, install `pynini` first in the same environment, then install `WeTextProcessing`, remove `WeTextProcessing` from `requirements.txt`, and finally rerun `pip install -r requirements.txt`.
+
+With Conda, we recommend:
 
 ```bash
 conda install -c conda-forge pynini=2.1.6.post1 -y
 pip install git+https://github.com/WhizZest/WeTextProcessing.git
+pip install -r requirements.txt
 ```
+
+If you are not using Conda, make sure you download a `pynini` wheel that matches your Python version and platform before installing `WeTextProcessing`. For a community-tested example, see [Issue #6](https://github.com/OpenMOSS/MOSS-TTS-Nano/issues/6).
 
 ### Voice Clone with `infer.py`
 
